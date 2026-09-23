@@ -1,0 +1,36 @@
+# ---- Flutter / Dart ----
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/build/
+mobile/.pub-cache/
+mobile/.pub/
+
+# Generated native platform projects — intentionally not committed.
+# `flutter create --platforms=android .` regenerates this (CI does it
+# automatically); see docs/BACKEND_SETUP.md for why. If you later choose to
+# commit it for a smoother local setup, remove this line — just make sure
+# android/key.properties (below) never gets committed along with it.
+mobile/android/
+mobile/ios/
+
+# Signing secrets — NEVER commit these.
+mobile/android/key.properties
+*.jks
+*.keystore
+
+# ---- Node (backend/functions, seller-web tooling if any) ----
+node_modules/
+npm-debug.log*
+
+# ---- Editor / OS ----
+.DS_Store
+.vscode/
+.idea/
+*.iml
+
+# ---- Local env files (none should exist, but just in case) ----
+.env
+.env.local
+seller-web/config.local.js

@@ -1,0 +1,127 @@
+name: Flutter build
+
+# This is where real compilation happens for this project. The Flutter SDK
+# can't be installed in the sandbox this app was built in (network policy
+# blocks pub.dev / storage.googleapis.com there — see docs/BACKEND_SETUP.md
+# for the full explanation), so every Dart/Flutter file was hand-written and
+# reviewed carefully but never actually compiled before landing here. This
+# workflow is the first real compiler+analyzer pass the app gets. Treat a
+# red run here as expected work-to-do, not a sign anything is unusually
+# broken — and please open an issue / fix forward rather than assuming the
+# app "should have" built cleanly already.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    working-directory: mobile
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        # Surfaces real errors/warnings without failing the whole workflow on
+        # style nits the first time through — tighten this to a hard failure
+        # once the initial backlog of lints (if any) has been triaged.
+        run: flutter analyze --no-fatal-infos
+        continue-on-error: true
+
+      - name: Run unit tests
+        run: flutter test
+
+  build-android:
+    needs: analyze-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Scaffold the Android platform project if it isn't committed yet
+        run: |
+          if [ ! -d android ]; then
+            echo "No android/ directory found — generating it with 'flutter create'."
+            flutter create --platforms=android --org com.rishikeshenterprises .
+          else
+            echo "android/ already exists, skipping scaffold."
+          fi
+
+      - name: Patch generated Android manifest (permissions, app label)
+        run: python3 scripts/patch_android.py
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+        run: |
+          flutter build apk --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            --dart-define=RAZORPAY_KEY_ID="$RAZORPAY_KEY_ID"
+
+      - name: Build release App Bundle (.aab — what the Play Store wants)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+        run: |
+          flutter build appbundle --release \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+            --dart-define=RAZORPAY_KEY_ID="$RAZORPAY_KEY_ID"
+
+      - name: Upload APK (for sideloading / internal testing)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rishikesh-enterprises-release-apk
+          path: mobile/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+      - name: Upload App Bundle (for Play Console upload)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rishikesh-enterprises-release-aab
+          path: mobile/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+
+      # NOTE on signing: this build uses Flutter's default release config,
+      # which is signed with the Android debug key so CI "just works" with
+      # no secrets configured. That's fine for internal testing/sideloading,
+      # but the Play Store will NOT accept a debug-signed upload. Before your
+      # first real Play Console upload, generate a real upload keystore and
+      # wire it in — see docs/PLAY_STORE_CHECKLIST.md, section "Signing".
