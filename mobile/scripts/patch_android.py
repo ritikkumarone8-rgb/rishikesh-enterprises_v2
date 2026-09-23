@@ -9,13 +9,21 @@ directory) and BEFORE `flutter build`. CI does this automatically — see
 .github/workflows/build.yml. A developer setting up the project locally for
 the first time should run it once too (see docs/BACKEND_SETUP.md).
 
-What it does, and why it's safe to automate (pure string/XML edits, not
-Gradle syntax which changes between Flutter versions):
+What it does, and why it's safe to automate (pure string/XML/Gradle-text
+edits, not a full rewrite, so it survives Flutter/AGP version drift):
   1. Adds the location permissions the `geolocator`/`geocoding` packages
      need for "use my current location" on the address form. (INTERNET is
      already included by the default Flutter template.)
   2. Sets the app's display label to "Rishikesh Enterprises" instead of the
      generated placeholder.
+  3. Pins compileSdk/targetSdk above Flutter's own scaffolded default. Some
+     dependencies (e.g. androidx.fragment 1.7.1, pulled in transitively by
+     the geocoding plugin) require compiling against API 34+; the
+     `flutter create` template's default (tied to whatever Flutter version
+     is installed) can be lower, which fails the Gradle
+     `checkReleaseAarMetadata` task with "requires ... version 34 or later".
+     Pinning explicit numbers here means this doesn't silently break again
+     the next time CI picks up a different stable Flutter release.
 
 It is idempotent — safe to run more than once.
 """
@@ -27,6 +35,19 @@ MOBILE_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST_PATHS = [
     MOBILE_ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml",
 ]
+
+# Both extensions are covered because which one `flutter create` generates
+# depends on the Flutter version running in CI (recent versions default to
+# the Kotlin DSL, .kts; older ones generate Groovy).
+APP_BUILD_GRADLE_PATHS = [
+    MOBILE_ROOT / "android" / "app" / "build.gradle.kts",
+    MOBILE_ROOT / "android" / "app" / "build.gradle",
+]
+
+# See point 3 in the module docstring above for why these are pinned rather
+# than left at Flutter's own default.
+COMPILE_SDK = 36
+TARGET_SDK = 35
 
 REQUIRED_PERMISSIONS = [
     "android.permission.ACCESS_FINE_LOCATION",
@@ -75,10 +96,60 @@ def patch_manifest(path: Path) -> None:
         print(f"  (no changes needed) {path}")
 
 
+def patch_build_gradle(path: Path) -> bool:
+    """Returns True if this was the build.gradle(.kts) file that exists and
+    got handled (so the caller can skip the other extension)."""
+    if not path.exists():
+        return False
+
+    text = path.read_text()
+    original = text
+
+    # Kotlin DSL: `compileSdk = flutter.compileSdkVersion` / `targetSdk = flutter.targetSdkVersion`
+    text = re.sub(
+        r"compileSdk\s*=\s*flutter\.compileSdkVersion",
+        f"compileSdk = {COMPILE_SDK}",
+        text,
+    )
+    text = re.sub(
+        r"targetSdk\s*=\s*flutter\.targetSdkVersion",
+        f"targetSdk = {TARGET_SDK}",
+        text,
+    )
+    # Groovy DSL: `compileSdkVersion flutter.compileSdkVersion` / `targetSdkVersion flutter.targetSdkVersion`
+    text = re.sub(
+        r"compileSdkVersion\s+flutter\.compileSdkVersion",
+        f"compileSdkVersion {COMPILE_SDK}",
+        text,
+    )
+    text = re.sub(
+        r"targetSdkVersion\s+flutter\.targetSdkVersion",
+        f"targetSdkVersion {TARGET_SDK}",
+        text,
+    )
+
+    if text != original:
+        path.write_text(text)
+        print(f"  + pinned compileSdk={COMPILE_SDK}, targetSdk={TARGET_SDK} in {path}")
+    else:
+        print(f"  (no changes needed) {path}")
+    return True
+
+
 def main() -> int:
     print("Patching Android platform files…")
     for manifest in MANIFEST_PATHS:
         patch_manifest(manifest)
+
+    for gradle_file in APP_BUILD_GRADLE_PATHS:
+        if patch_build_gradle(gradle_file):
+            break
+    else:
+        print(
+            "  (skip) no android/app/build.gradle(.kts) found yet — "
+            "run `flutter create --platforms=android .` first."
+        )
+
     print("Done.")
     return 0
 
