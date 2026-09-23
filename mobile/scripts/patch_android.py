@@ -16,14 +16,23 @@ edits, not a full rewrite, so it survives Flutter/AGP version drift):
      already included by the default Flutter template.)
   2. Sets the app's display label to "Rishikesh Enterprises" instead of the
      generated placeholder.
-  3. Pins compileSdk/targetSdk above Flutter's own scaffolded default. Some
-     dependencies (e.g. androidx.fragment 1.7.1, pulled in transitively by
-     the geocoding plugin) require compiling against API 34+; the
-     `flutter create` template's default (tied to whatever Flutter version
-     is installed) can be lower, which fails the Gradle
-     `checkReleaseAarMetadata` task with "requires ... version 34 or later".
-     Pinning explicit numbers here means this doesn't silently break again
-     the next time CI picks up a different stable Flutter release.
+  3. Pins compileSdk/targetSdk above Flutter's own scaffolded default, for
+     BOTH the app module and every plugin subproject (geolocator_android,
+     geocoding_android, etc. — each pulled from pub.dev with its own
+     build.gradle that independently reads the same shared default). Some
+     transitive androidx dependencies (fragment 1.7.1, core-ktx 1.13.1, …)
+     require compiling against API 34+; the `flutter create` template's
+     default (tied to whatever Flutter version is installed) can be lower,
+     which fails Gradle's `checkReleaseAarMetadata` task on whichever plugin
+     hits it first with "requires ... version 34 or later".
+
+     Patching only android/app/build.gradle(.kts) is NOT enough — that only
+     changes the *app* module's own compileSdk. Each plugin subproject reads
+     the same `flutter.compileSdkVersion` default independently and is
+     unaffected by the app's override. The fix has to happen at the
+     *root* android/build.gradle(.kts), which can force every subproject
+     (app + all plugins) via a `subprojects { ... }` block — the standard
+     workaround for this exact class of Flutter/Gradle version-skew error.
 
 It is idempotent — safe to run more than once.
 """
@@ -44,10 +53,54 @@ APP_BUILD_GRADLE_PATHS = [
     MOBILE_ROOT / "android" / "app" / "build.gradle",
 ]
 
+# The root-level Gradle file (one level up from android/app/) — this is
+# where the fix for every plugin subproject's compileSdk actually belongs.
+# See point 3 in the module docstring.
+ROOT_BUILD_GRADLE_PATHS = [
+    MOBILE_ROOT / "android" / "build.gradle.kts",
+    MOBILE_ROOT / "android" / "build.gradle",
+]
+
 # See point 3 in the module docstring above for why these are pinned rather
 # than left at Flutter's own default.
 COMPILE_SDK = 36
 TARGET_SDK = 35
+
+SUBPROJECTS_MARKER = "patch_android.py: force compileSdk across all subprojects"
+
+# Doubled {{ }} are literal Gradle braces (f-string escaping); the single
+# {COMPILE_SDK} is the actual Python substitution.
+SUBPROJECTS_BLOCK_KTS = f"""
+// >>> {SUBPROJECTS_MARKER} <<<
+// Plugin subprojects (geolocator_android, geocoding_android, ...) each read
+// Flutter's own default compileSdk independently of the app module, so
+// overriding android/app/build.gradle.kts alone doesn't reach them. This
+// forces every Android subproject to compile against the same SDK.
+subprojects {{
+    afterEvaluate {{
+        extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.let {{ ext ->
+            ext.compileSdkVersion({COMPILE_SDK})
+        }}
+    }}
+}}
+"""
+
+SUBPROJECTS_BLOCK_GROOVY = f"""
+// >>> {SUBPROJECTS_MARKER} <<<
+// Plugin subprojects (geolocator_android, geocoding_android, ...) each read
+// Flutter's own default compileSdk independently of the app module, so
+// overriding android/app/build.gradle alone doesn't reach them. This forces
+// every Android subproject to compile against the same SDK.
+subprojects {{
+    afterEvaluate {{ project ->
+        if (project.hasProperty('android')) {{
+            project.android {{
+                compileSdkVersion {COMPILE_SDK}
+            }}
+        }}
+    }}
+}}
+"""
 
 REQUIRED_PERMISSIONS = [
     "android.permission.ACCESS_FINE_LOCATION",
@@ -136,6 +189,27 @@ def patch_build_gradle(path: Path) -> bool:
     return True
 
 
+def patch_root_build_gradle(path: Path) -> bool:
+    """Appends a `subprojects { ... }` block that forces every plugin
+    subproject's compileSdk, not just the app module's. See point 3 in the
+    module docstring for why this is necessary. Returns True if this was the
+    build.gradle(.kts) file that exists and got handled."""
+    if not path.exists():
+        return False
+
+    text = path.read_text()
+
+    if SUBPROJECTS_MARKER in text:
+        print(f"  (no changes needed) {path}")
+        return True
+
+    block = SUBPROJECTS_BLOCK_KTS if path.suffix == ".kts" else SUBPROJECTS_BLOCK_GROOVY
+    text = text.rstrip("\n") + "\n" + block
+    path.write_text(text)
+    print(f"  + appended subprojects compileSdk={COMPILE_SDK} override to {path}")
+    return True
+
+
 def main() -> int:
     print("Patching Android platform files…")
     for manifest in MANIFEST_PATHS:
@@ -147,6 +221,15 @@ def main() -> int:
     else:
         print(
             "  (skip) no android/app/build.gradle(.kts) found yet — "
+            "run `flutter create --platforms=android .` first."
+        )
+
+    for gradle_file in ROOT_BUILD_GRADLE_PATHS:
+        if patch_root_build_gradle(gradle_file):
+            break
+    else:
+        print(
+            "  (skip) no android/build.gradle(.kts) found yet — "
             "run `flutter create --platforms=android .` first."
         )
 
