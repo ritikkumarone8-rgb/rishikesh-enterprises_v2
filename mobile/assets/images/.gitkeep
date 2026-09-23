@@ -1,0 +1,5 @@
+# Keeps this directory in git (empty dirs aren't tracked). pubspec.yaml
+# declares assets/images/ as an asset folder for when product/logo images
+# are added — this placeholder just keeps the folder from vanishing on
+# checkout, which was causing:
+#   Error: unable to find directory entry in pubspec.yaml: .../mobile/assets/images/
