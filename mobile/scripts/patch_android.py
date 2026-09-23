@@ -70,6 +70,15 @@ SUBPROJECTS_MARKER = "patch_android.py: force compileSdk across all subprojects"
 
 # Doubled {{ }} are literal Gradle braces (f-string escaping); the single
 # {COMPILE_SDK} is the actual Python substitution.
+#
+# Why the `state.executed` branch exists: Flutter's own template (earlier in
+# this same file) has `subprojects { project.evaluationDependsOn(":app") }`,
+# and evaluationDependsOn() synchronously force-evaluates its target — so by
+# the time THIS block runs, ":app" is already evaluated. Calling
+# `afterEvaluate { ... }` on an already-evaluated project throws "Cannot run
+# Project.afterEvaluate(Action) when the project is already evaluated." —
+# so an already-evaluated project gets the compileSdk override applied
+# directly instead of deferred.
 SUBPROJECTS_BLOCK_KTS = f"""
 // >>> {SUBPROJECTS_MARKER} <<<
 // Plugin subprojects (geolocator_android, geocoding_android, ...) each read
@@ -77,9 +86,15 @@ SUBPROJECTS_BLOCK_KTS = f"""
 // overriding android/app/build.gradle.kts alone doesn't reach them. This
 // forces every Android subproject to compile against the same SDK.
 subprojects {{
-    afterEvaluate {{
+    if (state.executed) {{
         extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.let {{ ext ->
             ext.compileSdkVersion({COMPILE_SDK})
+        }}
+    }} else {{
+        afterEvaluate {{
+            extensions.findByType(com.android.build.gradle.BaseExtension::class.java)?.let {{ ext ->
+                ext.compileSdkVersion({COMPILE_SDK})
+            }}
         }}
     }}
 }}
@@ -92,10 +107,18 @@ SUBPROJECTS_BLOCK_GROOVY = f"""
 // overriding android/app/build.gradle alone doesn't reach them. This forces
 // every Android subproject to compile against the same SDK.
 subprojects {{
-    afterEvaluate {{ project ->
+    if (state.executed) {{
         if (project.hasProperty('android')) {{
             project.android {{
                 compileSdkVersion {COMPILE_SDK}
+            }}
+        }}
+    }} else {{
+        afterEvaluate {{
+            if (project.hasProperty('android')) {{
+                project.android {{
+                    compileSdkVersion {COMPILE_SDK}
+                }}
             }}
         }}
     }}
