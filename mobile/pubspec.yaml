@@ -14,6 +14,11 @@ dependencies:
   # Backend
   supabase_flutter: ^2.6.0
 
+  # Native "Continue with Google" account picker (Android) — its ID token is
+  # exchanged for a Supabase session via supabase.auth.signInWithIdToken;
+  # Supabase never sees this app's Google credentials, only the token.
+  google_sign_in: ^7.2.0
+
   # State management
   flutter_riverpod: ^2.5.1
 

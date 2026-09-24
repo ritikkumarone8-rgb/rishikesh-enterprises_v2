@@ -12,7 +12,8 @@
 ///   flutter run \
 ///     --dart-define=SUPABASE_URL=https://xxxx.supabase.co \
 ///     --dart-define=SUPABASE_ANON_KEY=sb_publishable_xxx \
-///     --dart-define=RAZORPAY_KEY_ID=rzp_test_xxx
+///     --dart-define=RAZORPAY_KEY_ID=rzp_test_xxx \
+///     --dart-define=GOOGLE_WEB_CLIENT_ID=xxxx.apps.googleusercontent.com
 ///
 /// CI (see .github/workflows/build.yml) passes these from GitHub Actions
 /// secrets so they never appear in the repo at all.
@@ -35,6 +36,19 @@ class Env {
     defaultValue: 'rzp_test_xxxxxxxxxxxx',
   );
 
+  /// The *Web application* OAuth client ID from Google Cloud Console —
+  /// passed to `GoogleSignIn.initialize(serverClientId: ...)` on Android so
+  /// Supabase can verify the ID token it gets back. This is a public
+  /// identifier (not a secret) — the matching Client Secret never appears
+  /// in this app; it lives only in the Supabase dashboard's Google provider
+  /// settings. See docs/BACKEND_SETUP.md for exactly where to get this.
+  static const googleWebClientId = String.fromEnvironment(
+    'GOOGLE_WEB_CLIENT_ID',
+    defaultValue: '',
+  );
+
+  static bool get isGoogleSignInConfigured => googleWebClientId.isNotEmpty;
+
   static bool get isConfigured =>
-      !supabaseUrl.contains('YOUR-PROJECT') && !supabaseAnonKey.contains('YOUR-ANON');
+     !supabaseUrl.contains('YOUR-PROJECT') && !supabaseAnonKey.contains('YOUR-ANON');
 }

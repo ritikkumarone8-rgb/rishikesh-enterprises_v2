@@ -18,8 +18,11 @@ steps in order the first time.
 1. In the Supabase dashboard, open **SQL Editor**.
 2. Paste the full contents of `backend/sql/001_schema.sql` and run it.
 3. Then paste and run `backend/sql/002_order_rpc.sql`.
-4. Both files are safe to re-run if you need to (they use `create or replace` /
-   `if not exists` guards throughout).
+4. If you're setting up Google sign-in (step 4 below), also paste and run
+   `backend/sql/003_google_signin_profile.sql`. If not, skip it for now —
+   it's safe to run later, whenever you do enable Google sign-in.
+5. All three files are safe to re-run if you need to (they use
+   `create or replace` / `if not exists` guards throughout).
 
 This creates every table, the search function, and — importantly — all the Row
 Level Security policies that keep customer data private and prevent price
@@ -38,15 +41,102 @@ depends on it being on (see `SECURITY.md`).
      Twilio requires an initial account top-up. There's no way around some SMS
      provider cost for OTP login — it's how every phone-OTP flow works.
 2. **Authentication → Settings**: leave email auth as-is for now (unused by the
-   app), but it's what seller logins use (step 5).
+   app), but it's what seller logins use (step 6).
 
-## 4. Create the product-images storage bucket
+## 4. Enable Google sign-in for customers ("Continue with Google")
+
+This is separate from and additional to phone-OTP login (step 3) — customers
+can use either. It needs setup in **two places**: Google Cloud Console (to
+create the credentials) and the Supabase dashboard (to accept them). Do not
+substitute any of the values below with something invented — they all come
+from your own Google Cloud project.
+
+### 4.1 Google Cloud Console
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com/) and
+   either select an existing project or create a new one (e.g.
+   `rishikesh-enterprises`).
+2. **APIs & Services → OAuth consent screen**:
+   - User type: **External** (unless you have a Google Workspace org you want
+     to restrict to).
+   - App name, support email, developer contact email — fill these in with
+     your own details.
+   - Scopes: the default (`email`, `profile`, `openid`) is enough — the app
+     only asks for `email` and `profile`.
+   - While the app is in **Testing** mode, only the Google accounts you add
+     as test users can sign in. Add your own phone-testing Google account
+     here, or click **Publish app** when you're ready for any Google account
+     to be able to sign in.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**.
+   You need to create **two** separate OAuth clients here:
+   - **Application type: Web application.**
+     - Name it something like `rishikesh-enterprises-web` (this is only ever
+       used server-side / as an identifier — customers never see a web page
+       for this).
+     - No redirect URIs are required for this app's sign-in flow (it uses
+       Google's native Android sign-in, not a browser redirect).
+     - After creating it, Google shows you a **Client ID** *and* a **Client
+       Secret**. You need both — the Client ID goes into this app (as
+       `GOOGLE_WEB_CLIENT_ID`, see step 4.3) and into the Supabase dashboard;
+       the Client Secret goes **only** into the Supabase dashboard, never
+       into this app's code or repo.
+   - **Application type: Android.**
+     - **Package name**: `com.rishikeshenterprises.rishikesh_enterprises`
+       (this is the `applicationId`/`namespace` the CI build generates —
+       see `mobile/scripts/patch_android.py` and
+       `.github/workflows/build.yml`, which run
+       `flutter create --org com.rishikeshenterprises .`).
+     - **SHA-1 certificate fingerprint**: the SHA-1 of whatever key actually
+       signs the APK you're testing/shipping. Right now that's Flutter's
+       **debug key** (see the signing note at the bottom of
+       `.github/workflows/build.yml` — this app isn't using a real upload
+       keystore yet). To get the debug key's SHA-1 from a machine with the
+       Flutter/Android SDK installed:
+       ```bash
+       keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android
+       ```
+       Copy the `SHA1:` value shown. **This SHA-1 is different on every
+       machine's debug keystore** (including GitHub Actions' own ephemeral
+       one) — so Google Sign-In may only work on whichever machine's debug
+       key you registered. Once you generate a real upload keystore for the
+       Play Store (see `docs/PLAY_STORE_CHECKLIST.md`), come back and add
+       *that* keystore's SHA-1 as a second entry here (the Android OAuth
+       client accepts multiple SHA-1 fingerprints).
+     - This Android client has no Client Secret (Android clients never do)
+       and its Client ID isn't pasted into the app's code — Google validates
+       requests using the package name + SHA-1 you registered here, and
+       Supabase is told about it in step 4.2 below.
+
+### 4.2 Supabase dashboard
+
+1. **Authentication → Providers → Google** → enable it.
+2. **Client ID (for OAuth)**: paste the **Web application** Client ID from
+   step 4.1.
+3. **Client Secret (for OAuth)**: paste the **Web application** Client
+   Secret from step 4.1. (Only ever goes here — never in the Flutter app.)
+4. **Authorized Client IDs**: paste **both** Client IDs from step 4.1 (the
+   Web one and the Android one), one per line/comma-separated as the field
+   asks. This is what lets Supabase accept ID tokens minted for either
+   client — without it, the native Android sign-in will fail even though
+   the "Client ID"/"Client Secret" fields above look correct.
+5. No redirect URL or deep-link configuration is needed for this app —
+   that's only required for the browser-based OAuth flow, and this app uses
+   Google's native Android sign-in instead.
+
+### 4.3 This app's configuration
+
+The only value this app's code needs is the **Web application Client ID**
+from step 4.1 (not the secret, not the Android client). It's supplied at
+build time the same way `SUPABASE_URL` etc. already are — see step 11
+below and `mobile/lib/core/env.dart`.
+
+## 5. Create the product-images storage bucket
 
 Already created for you by `001_schema.sql` (a public-read, seller-write bucket
 called `product-images`). Nothing to do here — just confirm it shows up under
 **Storage** in the dashboard.
 
-## 5. Create your first seller login
+## 6. Create your first seller login
 
 Seller accounts are **not self-service** — there's no signup form, by design (see
 `SECURITY.md`). You create one manually, once, per person who should have seller
@@ -62,9 +152,9 @@ access (yourself, staff, etc.):
    ```
 4. That email/password now works at the seller dashboard (`seller-web/index.html`).
 
-Repeat step 5 for each additional staff member who needs dashboard access.
+Repeat step 6 for each additional staff member who needs dashboard access.
 
-## 6. Get your API keys
+## 7. Get your API keys
 
 **Project Settings → API**:
 - **Project URL** → this is `SUPABASE_URL`.
@@ -75,7 +165,7 @@ Repeat step 5 for each additional staff member who needs dashboard access.
   Supabase Edge Functions get it automatically at runtime as
   `SUPABASE_SERVICE_ROLE_KEY` — you don't need to copy it anywhere yourself.
 
-## 7. Deploy the Edge Functions
+## 8. Deploy the Edge Functions
 
 You'll need the [Supabase CLI](https://supabase.com/docs/guides/cli) installed
 locally (`npm install -g supabase`), then from the `backend/` directory:
@@ -109,7 +199,7 @@ use for `RAZORPAY_WEBHOOK_SECRET`.
 Use Razorpay **test mode** keys until you're ready to accept real payments — the
 app works identically, payments just don't move real money.
 
-## 8. Configure the seller web dashboard
+## 9. Configure the seller web dashboard
 
 Edit `seller-web/config.js`:
 
@@ -126,7 +216,7 @@ password-protected internal tool — see `SECURITY.md` for why it doesn't need
 anything fancier than that for a single-store setup, and what to reconsider if
 you grow into a multi-location or bigger business.
 
-## 9. Add some real catalogue data
+## 10. Add some real catalogue data
 
 The schema ships empty. Before the app is useful, add at least:
 - A few rows in `categories` (via the SQL editor, or build this into the seller
@@ -134,9 +224,9 @@ The schema ships empty. Before the app is useful, add at least:
   `docs/WHAT_COULD_BE_BETTER.md`).
 - A few rows in `brands` (Havells, etc.).
 - Products — easiest done from the seller dashboard once it's configured (step
-  8), since that's where the multi-image upload UI lives.
+  9), since that's where the multi-image upload UI lives.
 
-## 10. Run the Flutter app against it
+## 11. Run the Flutter app against it
 
 ```bash
 cd mobile
@@ -144,8 +234,18 @@ flutter pub get
 flutter run \
   --dart-define=SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co \
   --dart-define=SUPABASE_ANON_KEY=your-anon-public-key \
-  --dart-define=RAZORPAY_KEY_ID=rzp_test_xxxxxxxx
+  --dart-define=RAZORPAY_KEY_ID=rzp_test_xxxxxxxx \
+  --dart-define=GOOGLE_WEB_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
 ```
+
+Leave off `GOOGLE_WEB_CLIENT_ID` (or leave it blank) if you haven't done step 4
+yet — the app runs fine without it, "Continue with Google" just shows a
+friendly "not configured" error instead of the account picker until it's set.
+
+For CI (`.github/workflows/build.yml`), add the same value as a GitHub Actions
+repository secret named `GOOGLE_WEB_CLIENT_ID` (**Settings → Secrets and
+variables → Actions**), alongside the `SUPABASE_URL` / `SUPABASE_ANON_KEY` /
+`RAZORPAY_KEY_ID` secrets that are presumably already there.
 
 ### About the Android platform folder
 
@@ -166,8 +266,9 @@ needs — so there was no way to generate or verify a hand-written
 wherever you or CI actually have the Flutter SDK) generate it guarantees it
 matches whatever Flutter/Android Gradle Plugin version you're building with,
 rather than a hand-typed one that could quietly go stale. `patch_android.py`
-then layers on the two things this app needs that the bare template doesn't add
-(location permissions, the app's display name) — see that script's docstring.
+then layers on what this app needs that the bare template doesn't add
+(location permissions, the app's display name, and SDK version pins some
+dependencies require) — see that script's docstring.
 
 This is a one-time step per checkout; once `android/` exists, `flutter run` works
 normally.

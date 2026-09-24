@@ -88,22 +88,26 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
         run: |
           flutter build apk --release \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
-            --dart-define=RAZORPAY_KEY_ID="$RAZORPAY_KEY_ID"
+            --dart-define=RAZORPAY_KEY_ID="$RAZORPAY_KEY_ID" \
+            --dart-define=GOOGLE_WEB_CLIENT_ID="$GOOGLE_WEB_CLIENT_ID"
 
       - name: Build release App Bundle (.aab — what the Play Store wants)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
         run: |
           flutter build appbundle --release \
             --dart-define=SUPABASE_URL="$SUPABASE_URL" \
             --dart-define=SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
-            --dart-define=RAZORPAY_KEY_ID="$RAZORPAY_KEY_ID"
+            --dart-define=RAZORPAY_KEY_ID="$RAZORPAY_KEY_ID" \
+            --dart-define=GOOGLE_WEB_CLIENT_ID="$GOOGLE_WEB_CLIENT_ID"
 
       - name: Upload APK (for sideloading / internal testing)
         uses: actions/upload-artifact@v4

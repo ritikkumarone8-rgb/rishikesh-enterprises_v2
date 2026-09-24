@@ -33,6 +33,14 @@ edits, not a full rewrite, so it survives Flutter/AGP version drift):
      *root* android/build.gradle(.kts), which can force every subproject
      (app + all plugins) via a `subprojects { ... }` block — the standard
      workaround for this exact class of Flutter/Gradle version-skew error.
+  4. Pins the *app* module's minSdk to 23. `google_sign_in_android` (added
+     for "Continue with Google") pulls in `androidx.credentials`, whose
+     current stable release declares `minSdk 23` in its own manifest —
+     above Flutter's own scaffolded default (21). Unlike compileSdk, this
+     only needs to be forced on the app module: Gradle's manifest merger
+     requires the *final app*'s minSdk to be >= every dependency's minSdk,
+     but doesn't care what a lower-minSdk library module declares for
+     itself. Forcing it on the app module alone is sufficient.
 
 It is idempotent — safe to run more than once.
 """
@@ -61,10 +69,11 @@ ROOT_BUILD_GRADLE_PATHS = [
     MOBILE_ROOT / "android" / "build.gradle",
 ]
 
-# See point 3 in the module docstring above for why these are pinned rather
-# than left at Flutter's own default.
+# See points 3 and 4 in the module docstring above for why these are pinned
+# rather than left at Flutter's own default.
 COMPILE_SDK = 36
 TARGET_SDK = 35
+MIN_SDK = 23
 
 SUBPROJECTS_MARKER = "patch_android.py: force compileSdk across all subprojects"
 
@@ -203,10 +212,22 @@ def patch_build_gradle(path: Path) -> bool:
         f"targetSdkVersion {TARGET_SDK}",
         text,
     )
+    # Kotlin DSL: `minSdk = flutter.minSdkVersion`
+    text = re.sub(
+        r"minSdk\s*=\s*flutter\.minSdkVersion",
+        f"minSdk = {MIN_SDK}",
+        text,
+    )
+    # Groovy DSL: `minSdkVersion flutter.minSdkVersion`
+    text = re.sub(
+        r"minSdkVersion\s+flutter\.minSdkVersion",
+        f"minSdkVersion {MIN_SDK}",
+        text,
+    )
 
     if text != original:
         path.write_text(text)
-        print(f"  + pinned compileSdk={COMPILE_SDK}, targetSdk={TARGET_SDK} in {path}")
+        print(f"  + pinned compileSdk={COMPILE_SDK}, targetSdk={TARGET_SDK}, minSdk={MIN_SDK} in {path}")
     else:
         print(f"  (no changes needed) {path}")
     return True

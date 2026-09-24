@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
-import '../../services/auth_service.dart';
+import '../../services/auth_service.dart'; // AuthService, authServiceProvider, GoogleSignInCancelled
 
 /// First step of phone+OTP login. Only collects a 10-digit Indian mobile
 /// number and asks Supabase Auth to text a 6-digit code to it — no password,
@@ -21,6 +21,7 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
   final _controller = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _sending = false;
+  bool _googleSigningIn = false;
   String? _error;
 
   @override
@@ -55,6 +56,30 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
       setState(() => _error = 'Could not send OTP. Please check the number and try again.');
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _continueWithGoogle() async {
+    setState(() {
+      _googleSigningIn = true;
+      _error = null;
+    });
+    try {
+      await ref.read(authServiceProvider).signInWithGoogle();
+      if (!mounted) return;
+      // Successful login fires onAuthStateChange, which the router already
+      // listens to — same landing behaviour as after OTP verification.
+      if (context.canPop()) {
+        context.pop();
+      } else {
+        context.go('/home');
+      }
+    } on GoogleSignInCancelled {
+      // Person backed out of the account picker — not an error, no message.
+    } catch (e) {
+      setState(() => _error = 'Could not sign in with Google. Please try again.');
+    } finally {
+      if (mounted) setState(() => _googleSigningIn = false);
     }
   }
 
@@ -122,6 +147,39 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
                   'By continuing, you agree to receive an SMS with a verification code. '
                   'Standard rates may apply.',
                   style: TextStyle(color: AppColors.muted, fontSize: 12),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: const [
+                    Expanded(child: Divider(color: AppColors.line)),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12),
+                      child: Text('OR', style: TextStyle(color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w700)),
+                    ),
+                    Expanded(child: Divider(color: AppColors.line)),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                OutlinedButton(
+                  onPressed: _googleSigningIn ? null : _continueWithGoogle,
+                  child: _googleSigningIn
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.4, color: AppColors.ink),
+                        )
+                      : const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            // A plain glyph rather than Google's actual "G"
+                            // mark — swap in the official asset later if
+                            // you want pixel-perfect branding (Google's
+                            // button guidelines have the downloadable SVGs).
+                            Icon(Icons.g_mobiledata_rounded, size: 26),
+                            SizedBox(width: 8),
+                            Text('Continue with Google'),
+                          ],
+                        ),
                 ),
               ],
             ),

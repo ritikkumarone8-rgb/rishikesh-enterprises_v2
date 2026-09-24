@@ -51,8 +51,10 @@ wrong.
 
 ## What's using what
 
-- **Customers** log in with phone number + SMS OTP (no password) — see
-  `mobile/lib/features/auth/`.
+- **Customers** log in with phone number + SMS OTP, or with "Continue with
+  Google" (no password either way) — see `mobile/lib/features/auth/` and
+  `mobile/lib/services/auth_service.dart`. Google sign-in needs a one-time
+  Google Cloud + Supabase setup; see `docs/BACKEND_SETUP.md`, step 4.
 - **Orders** can only ever be created through the `create_order` Postgres
   function, never a direct table write from the app — this is what stops a
   modified client from tampering with prices (`SECURITY.md` has the full
