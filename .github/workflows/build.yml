@@ -68,6 +68,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Restore stable Android debug signing key when configured
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_DEBUG_KEYSTORE_BASE64" ]; then
+            mkdir -p "$HOME/.android"
+            printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | base64 --decode > "$HOME/.android/debug.keystore"
+            chmod 600 "$HOME/.android/debug.keystore"
+            echo "Restored the stable Android debug signing key."
+          else
+            echo "ANDROID_DEBUG_KEYSTORE_BASE64 is unset; this build will use a temporary key."
+          fi
+
       - name: Scaffold the Android platform project if it isn't committed yet
         run: |
           if [ ! -d android ]; then
@@ -124,8 +137,8 @@ jobs:
           if-no-files-found: error
 
       # NOTE on signing: this build uses Flutter's default release config,
-      # which is signed with the Android debug key so CI "just works" with
-      # no secrets configured. That's fine for internal testing/sideloading,
-      # but the Play Store will NOT accept a debug-signed upload. Before your
-      # first real Play Console upload, generate a real upload keystore and
-      # wire it in — see docs/PLAY_STORE_CHECKLIST.md, section "Signing".
+      # which is signed with the Android debug key. Set the
+      # ANDROID_DEBUG_KEYSTORE_BASE64 Actions secret to keep that key stable
+      # across CI runs for Google Sign-In. A debug-signed AAB is still not
+      # suitable for Play Store upload; use a real upload keystore before
+      # publishing — see docs/PLAY_STORE_CHECKLIST.md, section "Signing".
