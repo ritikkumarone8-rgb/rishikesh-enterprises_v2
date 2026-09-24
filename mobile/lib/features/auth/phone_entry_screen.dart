@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 import '../../core/theme.dart';
 import '../../services/auth_service.dart'; // AuthService, authServiceProvider, GoogleSignInCancelled
 
@@ -77,7 +78,16 @@ class _PhoneEntryScreenState extends ConsumerState<PhoneEntryScreen> {
     } on GoogleSignInCancelled {
       // Person backed out of the account picker — not an error, no message.
     } catch (e) {
-      setState(() => _error = 'Could not sign in with Google. Please try again.');
+      // Show the real reason, not a generic "try again" — a misconfigured
+      // Google/Supabase setup won't be fixed by retrying, and hiding that
+      // behind a vague message just looks like the button does nothing.
+      final message = e is AuthException ? e.message : 'Could not sign in with Google: $e';
+      setState(() => _error = message);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), duration: const Duration(seconds: 8)),
+        );
+      }
     } finally {
       if (mounted) setState(() => _googleSigningIn = false);
     }

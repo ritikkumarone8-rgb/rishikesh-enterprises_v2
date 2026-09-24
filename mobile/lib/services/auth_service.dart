@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -48,13 +50,37 @@ class AuthService {
     if (existing != null) return existing;
 
     if (!Env.isGoogleSignInConfigured) {
+      // This is the #1 reason "Continue with Google" silently does nothing:
+      // the APK was built without --dart-define=GOOGLE_WEB_CLIENT_ID=... (a
+      // missing GitHub Actions secret, or a local `flutter run` without the
+      // flag). Spelled out in full so it's impossible to mistake for "try
+      // again and it might work" — retrying will not help until that
+      // build-time value is set. See docs/BACKEND_SETUP.md step 4.
       throw const AuthException(
-        'Google sign-in is not configured for this build (missing GOOGLE_WEB_CLIENT_ID).',
+        'Google sign-in isn\'t set up on this build yet: no GOOGLE_WEB_CLIENT_ID '
+        'was baked in at build time. This needs a Google Cloud OAuth client, '
+        'the Supabase Google provider configured, and the GOOGLE_WEB_CLIENT_ID '
+        'GitHub Actions secret set — see docs/BACKEND_SETUP.md step 4, then '
+        'rebuild the app.',
       );
     }
 
     final instance = GoogleSignIn.instance;
-    await instance.initialize(serverClientId: Env.googleWebClientId);
+    try {
+      await instance.initialize(serverClientId: Env.googleWebClientId).timeout(
+            const Duration(seconds: 20),
+            onTimeout: () => throw const AuthException(
+              'Could not reach Google (initialize timed out). Check your internet '
+              'connection and try again.',
+            ),
+          );
+    } on GoogleSignInException catch (e) {
+      throw AuthException(
+        'Google sign-in could not initialize (${e.code}${e.description != null ? ': ${e.description}' : ''}). '
+        'This usually means the Google Cloud OAuth client setup is incomplete '
+        'or the GOOGLE_WEB_CLIENT_ID value is wrong — see docs/BACKEND_SETUP.md step 4.',
+      );
+    }
     _googleSignIn = instance;
     return instance;
   }
@@ -81,12 +107,29 @@ class AuthService {
 
     final GoogleSignInAccount googleUser;
     try {
-      googleUser = await googleSignIn.authenticate();
+      googleUser = await googleSignIn.authenticate().timeout(
+            const Duration(seconds: 45),
+            onTimeout: () => throw const AuthException(
+              'Google sign-in timed out waiting for the account picker. Make sure '
+              'Google Play services is installed and up to date on this device, '
+              'then try again.',
+            ),
+          );
     } on GoogleSignInException catch (e) {
       if (e.code == GoogleSignInExceptionCode.canceled) {
         throw GoogleSignInCancelled();
       }
-      rethrow;
+      // Surface the real code/description instead of a generic message —
+      // e.g. "no credentials available" almost always means the Android
+      // OAuth client's package name + SHA-1 in Google Cloud Console doesn't
+      // match the key this APK is actually signed with. Getting the exact
+      // reason on screen means it doesn't have to be guessed at blind.
+      throw AuthException(
+        'Google sign-in failed to start (${e.code}${e.description != null ? ': ${e.description}' : ''}). '
+        "This is usually the Android OAuth client's package name/SHA-1 not "
+        'matching this build\'s signing key, or Google Play services being '
+        'missing/outdated on this device — see docs/BACKEND_SETUP.md step 4.1.',
+      );
     }
 
     final idToken = googleUser.authentication.idToken;
@@ -99,15 +142,35 @@ class AuthService {
     // authorization silently if there is one; otherwise `authorizeScopes`
     // prompts for the (minimal) email/profile scopes.
     const scopes = ['email', 'profile'];
-    final authorization =
-        await googleUser.authorizationClient.authorizationForScopes(scopes) ??
-            await googleUser.authorizationClient.authorizeScopes(scopes);
+    final GoogleSignInClientAuthorization authorization;
+    try {
+      authorization = await googleUser.authorizationClient.authorizationForScopes(scopes) ??
+          await googleUser.authorizationClient.authorizeScopes(scopes);
+    } on GoogleSignInException catch (e) {
+      throw AuthException(
+        'Google sign-in could not get authorization (${e.code}${e.description != null ? ': ${e.description}' : ''}).',
+      );
+    }
 
-    await supabase.auth.signInWithIdToken(
-      provider: OAuthProvider.google,
-      idToken: idToken,
-      accessToken: authorization.accessToken,
-    );
+    try {
+      await supabase.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+        accessToken: authorization.accessToken,
+      );
+    } on AuthException catch (e) {
+      // Supabase itself rejected the token — almost always means the
+      // Supabase dashboard's Google provider isn't configured yet (Client
+      // ID/Secret, or the "Authorized Client IDs" list missing this app's
+      // Android client). Passed through with that context rather than
+      // Supabase's raw (often cryptic) message alone.
+      throw AuthException(
+        'Supabase rejected the Google sign-in (${e.message}). Check '
+        'Authentication → Providers → Google in the Supabase dashboard — '
+        'Client ID/Secret and Authorized Client IDs — see '
+        'docs/BACKEND_SETUP.md step 4.2.',
+      );
+    }
   }
 
   Future<void> signOut() async {
