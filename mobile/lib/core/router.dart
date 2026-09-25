@@ -17,6 +17,7 @@ import '../features/orders/order_history_screen.dart';
 import '../features/orders/order_detail_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/addresses_screen.dart';
+import '../features/seller/seller_dashboard_screen.dart';
 import '../widgets/main_shell.dart';
 
 /// Refreshes the router whenever auth state changes, so a login/logout
@@ -92,6 +93,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => OrderDetailScreen(orderCode: state.pathParameters['code']!),
       ),
       GoRoute(path: '/profile/addresses', builder: (_, __) => const AddressesScreen()),
+      GoRoute(path: '/seller', builder: (_, __) => const SellerDashboardScreen()),
     ],
   );
 });

@@ -74,6 +74,14 @@ class ProfileScreen extends ConsumerWidget {
             label: 'Contact / Support',
             onTap: () => _showAbout(context),
           ),
+          const SizedBox(height: 8),
+          const Divider(),
+          const SizedBox(height: 8),
+          _MenuTile(
+            icon: Icons.storefront,
+            label: 'Log in as seller',
+            onTap: () => context.push('/seller'),
+          ),
           if (loggedIn) ...[
             const SizedBox(height: 8),
             _MenuTile(

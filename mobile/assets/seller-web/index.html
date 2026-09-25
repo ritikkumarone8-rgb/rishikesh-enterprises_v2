@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Rishikesh Enterprises — Seller Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="brand-mark">⚡ Rishikesh Enterprises</div>
+    <h1>Seller Dashboard</h1>
+    <p class="sub">Sign in with the email &amp; password your store owner set up for you.</p>
+    <form id="login-form">
+      <div class="field">
+        <label for="login-email">Email</label>
+        <input id="login-email" type="email" autocomplete="username" required>
+      </div>
+      <div class="field">
+        <label for="login-password">Password</label>
+        <input id="login-password" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" id="login-submit">Sign in</button>
+      <p id="login-error" class="error-text" style="display:none"></p>
+    </form>
+    <p class="hint-text" style="margin-top:18px">
+      Don't have a login yet? Ask whoever manages the store's Supabase project to create one —
+      seller accounts aren't self-service, by design (see docs/BACKEND_SETUP.md).
+    </p>
+  </div>
+</div>
+
+<!-- ================= APP SHELL ================= -->
+<div id="app">
+  <div class="topbar">
+    <div class="brand-mark">⚡ Rishikesh Enterprises — Seller</div>
+    <div class="who">
+      <span id="who-email"></span>
+      <button class="btn btn-outline btn-sm" id="logout-btn">Log out</button>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <button data-view="dashboard" class="nav-btn active">📊 <span class="label">Dashboard</span></button>
+    <button data-view="products" class="nav-btn">📦 <span class="label">Products</span></button>
+    <button data-view="orders" class="nav-btn">🧾 <span class="label">Orders</span></button>
+    <button data-view="deals" class="nav-btn">🏷️ <span class="label">Deals</span></button>
+    <button data-view="customers" class="nav-btn">👥 <span class="label">Customers</span></button>
+  </div>
+
+  <div class="main">
+
+    <!-- ---- Dashboard ---- -->
+    <div class="view active" id="view-dashboard">
+      <h2 class="view-title">Dashboard</h2>
+      <div class="kpi-grid" id="kpi-grid">
+        <div class="kpi-card"><div class="label">Total products</div><div class="value" id="kpi-products">—</div></div>
+        <div class="kpi-card"><div class="label">Out of stock</div><div class="value danger" id="kpi-oos">—</div></div>
+        <div class="kpi-card"><div class="label">Low stock (≤5)</div><div class="value warn" id="kpi-low">—</div></div>
+        <div class="kpi-card"><div class="label">Pending orders</div><div class="value warn" id="kpi-pending">—</div></div>
+        <div class="kpi-card"><div class="label">Orders today</div><div class="value" id="kpi-today-orders">—</div></div>
+        <div class="kpi-card"><div class="label">Revenue today</div><div class="value ok" id="kpi-today-revenue">—</div></div>
+        <div class="kpi-card"><div class="label">Revenue (30 days)</div><div class="value ok" id="kpi-month-revenue">—</div></div>
+        <div class="kpi-card"><div class="label">Total customers</div><div class="value" id="kpi-customers">—</div></div>
+      </div>
+      <h2 class="view-title" style="font-size:15px">Recent orders</h2>
+      <table>
+        <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th>Status</th><th>Placed</th></tr></thead>
+        <tbody id="recent-orders-body"><tr><td colspan="6" class="empty-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- ---- Products ---- -->
+    <div class="view" id="view-products">
+      <h2 class="view-title">Products</h2>
+      <div class="toolbar">
+        <input type="search" id="product-search" placeholder="Search products…">
+        <select id="product-category-filter"><option value="">All categories</option></select>
+        <select id="product-status-filter">
+          <option value="">All status</option>
+          <option value="active">Active only</option>
+          <option value="inactive">Inactive only</option>
+          <option value="oos">Out of stock</option>
+        </select>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" id="add-product-btn">+ Add product</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th></th><th>Product</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th><th>Rating</th><th></th></tr>
+        </thead>
+        <tbody id="products-body"><tr><td colspan="8" class="empty-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- ---- Orders ---- -->
+    <div class="view" id="view-orders">
+      <h2 class="view-title">Orders</h2>
+      <div class="toolbar">
+        <select id="order-status-filter">
+          <option value="">All statuses</option>
+          <option value="new">New</option>
+          <option value="confirmed">Confirmed</option>
+          <option value="in_transit">In transit</option>
+          <option value="fulfilled">Fulfilled</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <div id="orders-list"><div class="empty-state">Loading…</div></div>
+    </div>
+
+    <!-- ---- Deals ---- -->
+    <div class="view" id="view-deals">
+      <h2 class="view-title">Deals</h2>
+      <div class="toolbar">
+        <div class="spacer"></div>
+        <button class="btn btn-primary" id="add-deal-btn">+ Add deal</button>
+      </div>
+      <table>
+        <thead><tr><th>Title</th><th>Category</th><th>Active</th><th>Dates</th><th></th></tr></thead>
+        <tbody id="deals-body"><tr><td colspan="5" class="empty-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- ---- Customers ---- -->
+    <div class="view" id="view-customers">
+      <h2 class="view-title">Customers</h2>
+      <p class="hint-text" style="margin-bottom:14px">Read-only — for order fulfilment reference. Customer accounts and phone numbers are managed by customers themselves via the app.</p>
+      <table>
+        <thead><tr><th>Phone</th><th>Name</th><th>Joined</th></tr></thead>
+        <tbody id="customers-body"><tr><td colspan="3" class="empty-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<!-- Modal mount point -->
+<div id="modal-root"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

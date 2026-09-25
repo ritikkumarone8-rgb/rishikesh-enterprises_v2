@@ -3,9 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
 import '../../models/product.dart';
+import '../../models/review.dart';
 import '../../services/catalog_service.dart';
 import '../../services/cart_provider.dart';
+import '../../services/auth_service.dart';
 import 'widgets/image_gallery.dart';
+import 'widgets/reviews_section.dart';
 
 class ProductDetailScreen extends ConsumerWidget {
   final String productId;
@@ -150,6 +153,10 @@ class _ProductDetailBody extends ConsumerWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    const SizedBox(height: 12),
+                    ReviewsSection(productId: product.id),
                   ],
                 ),
               ),
@@ -220,9 +227,15 @@ class _BottomBar extends ConsumerWidget {
                       label: const Text('Add to cart'),
                       onPressed: () {
                         final err = ref.read(cartProvider.notifier).add(product);
-                        if (err != null) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
-                        }
+                        ScaffoldMessenger.of(context)
+                          ..hideCurrentSnackBar()
+                          ..showSnackBar(SnackBar(
+                            content: Text(err ?? '${product.name} added to cart'),
+                            duration: const Duration(seconds: 2),
+                            action: err == null
+                                ? SnackBarAction(label: 'VIEW CART', textColor: Colors.white, onPressed: () => context.push('/cart'))
+                                : null,
+                          ));
                       },
                     ),
                   )

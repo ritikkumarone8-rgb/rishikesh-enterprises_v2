@@ -204,9 +204,15 @@ class _AddButton extends ConsumerWidget {
         ),
         onPressed: () {
           final err = ref.read(cartProvider.notifier).add(product);
-          if (err != null) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
-          }
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(
+              content: Text(err ?? '${product.name} added to cart'),
+              duration: const Duration(seconds: 2),
+              action: err == null
+                  ? SnackBarAction(label: 'VIEW CART', textColor: Colors.white, onPressed: () => context.push('/cart'))
+                  : null,
+            ));
         },
         child: const Text('ADD'),
       ),

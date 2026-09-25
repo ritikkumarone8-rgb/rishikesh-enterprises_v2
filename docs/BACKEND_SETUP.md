@@ -23,6 +23,12 @@ steps in order the first time.
    it's safe to run later, whenever you do enable Google sign-in.
 5. All three files are safe to re-run if you need to (they use
    `create or replace` / `if not exists` guards throughout).
+6. Optional but recommended for exploring the app: paste and run
+   `backend/sql/004_seed_dummy_data.sql` too. It adds a handful of
+   categories, brands and realistic Havells/Anchor/Crompton/Polycab
+   products (each with 4+ photos) so browsing, product details, cart and
+   the seller dashboard's inventory/stock views all have something to show.
+   It's also safe to re-run.
 
 This creates every table, the search function, and — importantly — all the Row
 Level Security policies that keep customer data private and prevent price
@@ -218,13 +224,21 @@ you grow into a multi-location or bigger business.
 
 ## 10. Add some real catalogue data
 
-The schema ships empty. Before the app is useful, add at least:
+The schema ships empty. If you ran the optional `004_seed_dummy_data.sql` in
+step 2, you already have demo categories/brands/products to explore — skip
+straight to step 11. For real catalogue data, add at least:
 - A few rows in `categories` (via the SQL editor, or build this into the seller
   dashboard later — categories/brands management wasn't in scope for v1, see
   `docs/WHAT_COULD_BE_BETTER.md`).
 - A few rows in `brands` (Havells, etc.).
 - Products — easiest done from the seller dashboard once it's configured (step
   9), since that's where the multi-image upload UI lives.
+
+The seller dashboard is also reachable from inside the Flutter app itself —
+Profile → "Log in as seller" opens it in an in-app WebView (see
+`mobile/lib/features/seller/seller_dashboard_screen.dart`), pre-configured
+with this project's Supabase URL/anon key automatically. It's the same
+dashboard as `seller-web/`, just embedded instead of hosted separately.
 
 ## 11. Run the Flutter app against it
 
